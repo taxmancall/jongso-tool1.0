@@ -396,25 +396,49 @@ function parseText(text, filename){
   const isWorkIncome = /근로소득\s*(원천징수영수증|지급명세서)/.test(text) || /근로소득지급명세서/.test(filename);
   const isBizNotice = text.includes('기장의무') || text.includes('경비율') || text.includes('수입종류');
 
-  // ── 업종코드 (사업소득 안내문용) ──
-  const codeMatches = text.match(/9\d{5}/g) || [];
+  // ── 업종코드 — 6자리 숫자 전체 추출 후 IC DB와 매칭 ──
+  const codeMatches = text.match(/\b\d{6}\b/g) || [];
   const uniqueCodes = [...new Set(codeMatches)].filter(c=>IC.some(d=>d.c===c));
 
-  // ── 총계 수입금액 (사업소득) ──
-  const totalMatch = text.match(/총\s*[계계][^\d]{0,5}([\d,]{4,})/);
-  const totalAmt = totalMatch ? parseNum(totalMatch[1]) : 0;
+  // ── 총계 수입금액 — 복수 패턴 ──
+  let totalAmt = 0;
+  const totalPatterns = [
+    /총\s*[계계]\s*([\d,]{5,})/,
+    /수입금액\s*([\d,]{5,})/,
+    /총수입금액\s*([\d,]{5,})/,
+    /합\s*계\s*([\d,]{5,})/
+  ];
+  for(const p of totalPatterns){
+    const m = text.match(p);
+    if(m){ const v=parseNum(m[1]); if(v>100000){totalAmt=v;break;} }
+  }
+  // 수입금액이 안 잡히면 — 안내문에서 가장 큰 7~11자리 숫자 추출
+  if(!totalAmt){
+    const bigNums = (text.match(/\b\d{7,11}\b/g)||[]).map(n=>parseInt(n)).filter(n=>n>1000000&&n<10000000000);
+    if(bigNums.length) totalAmt = Math.max(...bigNums);
+  }
 
   // ── 국민연금 ──
-  const penMatch = text.match(/국민연금보험료[^\d]{0,5}([\d,]{3,})/);
+  const penMatch = text.match(/국민연금보험료[^\d]{0,10}([\d,]{3,})/);
   const pension = penMatch ? parseNum(penMatch[1]) : 0;
 
-  // ── 원천징수세액 (사업소득) ──
-  const whMatch = text.match(/원천징수\s*세액[^\d]{0,10}([\d,]{3,})/);
+  // ── 노란우산공제 ──
+  const nokranMatch = text.match(/소기업소상공인공제부금[^\d]{0,20}([\d,]{3,})/);
+  const nokran = nokranMatch ? parseNum(nokranMatch[1]) : 0;
+
+  // ── 원천징수세액 (사업소득 인적용역) ──
+  const whMatch = text.match(/원천징수세액[\s\S]{0,30}?인적용역[^\d]{0,10}([\d,]{3,})/)||
+                  text.match(/원천징수세액[^\d]{0,15}([\d,]{3,})/);
   const withhold = whMatch ? parseNum(whMatch[1]) : 0;
 
   // ── 중간예납 ──
-  const ppMatch = text.match(/중간예납세액[^\d]{0,5}([\d,]{3,})/);
+  const ppMatch = text.match(/중간예납세액[^\d]{0,10}([\d,]{3,})/);
   const prepaid = ppMatch ? parseNum(ppMatch[1]) : 0;
+
+  // ── 기타소득 여부 및 원천징수 ──
+  const hasOther = text.includes('기타') && /[OO○]/.test(text.substring(Math.max(0,text.indexOf('기타')-5), text.indexOf('기타')+30));
+  const otherWhMatch = text.match(/기타소득[^\d]{0,30}([\d,]{3,})/);
+  const otherWithhold = otherWhMatch ? parseNum(otherWhMatch[1]) : 0;
 
   // ── 근로소득 파싱 ──
   let workSalary = 0, workTax = 0, workDeduct = 0;
@@ -449,14 +473,18 @@ function parseText(text, filename){
 
   parsedData = {
     filename, isWorkIncome, isBizNotice,
-    totalAmt, codes: uniqueCodes.slice(0,5),
-    pension, withhold, prepaid,
-    workSalary, workTax, workDeduct, hasWork,
+    totalAmt, codes: uniqueCodes.slice(0,8),
+    pension, nokran, withhold, prepaid,
+    hasWork, hasOther, otherWithhold,
+    workSalary, workTax, workDeduct,
     parsed: true
   };
 
   let html = `<strong>📋 ${filename}</strong><br>`;
-  html += `<span style="font-size:11px;padding:2px 6px;border-radius:3px;background:${isWorkIncome?'#EAF3DE':'#E6F1FB'};color:${isWorkIncome?'#27500A':'#0C447C'};">${isWorkIncome?'근로소득 원천징수영수증':'사업소득 안내문'}</span><br><br>`;
+  const typeLabel = isWorkIncome ? '근로소득 원천징수영수증' : isBizNotice ? '사업소득 안내문' : '기타소득 영수증';
+  const typeBg = isWorkIncome ? '#EAF3DE' : '#E6F1FB';
+  const typeColor = isWorkIncome ? '#27500A' : '#0C447C';
+  html += `<span style="font-size:11px;padding:2px 6px;border-radius:3px;background:${typeBg};color:${typeColor};">${typeLabel}</span><br><br>`;
 
   if(isWorkIncome){
     if(workSalary) html += `총급여: <strong>${F(workSalary)}원</strong><br>`;
@@ -466,11 +494,14 @@ function parseText(text, filename){
     html += `→ 근로소득 합산 섹션이 자동으로 열립니다.<br>`;
   } else {
     if(uniqueCodes.length) html += `업종코드: <strong>${uniqueCodes.join(', ')}</strong><br>`;
+    else html += `<span style="color:#A32D2D;">⚠️ 업종코드 미감지 — 직접 검색 후 선택해주세요.</span><br>`;
     if(totalAmt) html += `총 수입금액: <strong>${F(totalAmt)}원</strong><br>`;
     if(pension) html += `국민연금: <strong>${F(pension)}원</strong><br>`;
+    if(nokran) html += `노란우산공제: <strong>${F(nokran)}원</strong><br>`;
     if(withhold) html += `원천징수세액: <strong>${F(withhold)}원</strong><br>`;
     if(prepaid) html += `중간예납: <strong>${F(prepaid)}원</strong><br>`;
-    if(hasWork) html += `⚠️ 근로소득 합산 감지됨<br>`;
+    if(hasWork) html += `→ <strong>근로소득 합산</strong> 감지됨<br>`;
+    if(hasOther) html += `→ <strong>기타소득 합산</strong> 감지됨 (별도 확인)<br>`;
   }
   html += `<span style="font-size:11px;color:#666;">"파싱 결과 반영하기" 버튼을 눌러 입력란에 적용하세요.</span>`;
 
@@ -517,6 +548,7 @@ function applyParsed(){
     });
   }
   if(parsedData.pension) document.getElementById('pen').value = parsedData.pension;
+  if(parsedData.nokran) document.getElementById('nk').value = parsedData.nokran;
   if(parsedData.withhold) document.getElementById('wh').value = parsedData.withhold;
   if(parsedData.prepaid) document.getElementById('pp').value = parsedData.prepaid;
   if(parsedData.hasWork){
