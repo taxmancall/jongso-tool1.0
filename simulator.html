@@ -1028,20 +1028,9 @@ function calc(){
   ];
   
   document.getElementById('cds').innerHTML = results.map(d=>{
-    // ★ 단순경비율 적용 불가 시 비활성 카드 렌더링
-    if(d.disabled){
-      return `<div class="cc" style="opacity:.5;background:#f8f8f6;">
-        <div class="cc-tit">
-          <span>${d.lbl}<br><span style="font-size:11px;font-weight:400;color:#888;">${d.sub}</span></span>
-        </div>
-        <div style="padding:30px 10px;text-align:center;color:#A32D2D;font-size:12px;line-height:1.6;">
-          <div style="font-size:24px;margin-bottom:8px;">🚫</div>
-          <strong>${d.warn}</strong><br>
-          <span style="color:#888;font-size:11px;">이 신고방식은 적용할 수 없습니다.</span>
-        </div>
-      </div>`;
-    }
-    const isBest = (d.r.det-(d.r.wh+d.r.pp)) + d.r.loc === minT;
+    // ★ 단순경비율 적용 불가여도 카드는 정상 렌더링 (참고용으로 비교 가능)
+    // 다만 '최저세액' 후보에서는 제외되고, 상단에 '참고용' 배지 표시
+    const isBest = !d.disabled && (d.r.det-(d.r.wh+d.r.pp)) + d.r.loc === minT;
     const workRow = d.r.work>0?`<div class="cr"><span class="cm">근로소득금액</span><span>+${F(d.r.work)}원</span></div>`:'';
     const workTaxRow = d.r.workTax>0?`<div class="cr"><span class="cm">근로소득 결정세액</span><span class="crd">△${F(d.r.workTax)}원</span></div>`:'';
     // ★ 무기장가산세 행
@@ -1050,12 +1039,12 @@ function calc(){
     const incomeTaxPay = d.r.det - (d.r.wh + d.r.pp);
     // 총 납부(환급) = 소득세분 + 지방소득세
     const totalPay = incomeTaxPay + d.r.loc;
-    return `<div class="cc${isBest?' best':''}">
+    return `<div class="cc${isBest?' best':''}"${d.disabled?' style="background:#fafaf8;"':''}>
       <div class="cc-tit">
         <span>${d.lbl}<br><span style="font-size:11px;font-weight:400;color:#888;">${d.sub}</span></span>
-        ${isBest?'<span class="best-b">최저세액</span>':''}
+        ${isBest?'<span class="best-b">최저세액</span>':d.disabled?'<span style="background:#FCEBEB;color:#A32D2D;font-size:10px;padding:2px 7px;border-radius:4px;white-space:nowrap;">참고용</span>':''}
       </div>
-      ${d.warn?`<div style="background:#FAEEDA;color:#633806;padding:6px 8px;border-radius:6px;font-size:11px;margin-bottom:8px;line-height:1.4;">${d.warn}</div>`:''}
+      ${d.warn?`<div style="background:${d.disabled?'#FCEBEB':'#FAEEDA'};color:${d.disabled?'#A32D2D':'#633806'};padding:6px 8px;border-radius:6px;font-size:11px;margin-bottom:8px;line-height:1.4;">${d.warn}</div>`:''}
       <div class="cr"><span class="cm">① 수입금액</span><span>${F(totalRev)}원</span></div>
       <div class="cr"><span class="cm">② 필요경비</span><span class="crd">△${F(totalRev-d.inc)}원</span></div>
       <div class="cr"><span class="cm">③ 소득금액</span><span>${F(d.inc)}원</span></div>
