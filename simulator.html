@@ -429,10 +429,12 @@ function parseText(text, filename){
   const status = document.getElementById('parse-status');
   const resultEl = document.getElementById('parsed-result');
 
-  // ── 파일 유형 판별 ──
-  const isWorkIncome = /근로소득\s*(원천징수영수증|지\s*급\s*명\s*세\s*서)/.test(text) ||
-                       /근로소득지급명세서|근로소득원천징수/.test(filename.replace(/[_\s]/g,''));
-  const isBizNotice = text.includes('기장의무') || text.includes('경비율') || text.includes('수입종류');
+  // ── 파일 유형 판별 — 사업소득 안내문 먼저 확인 ──
+  const isBizNotice = text.includes('기장의무') || text.includes('기준경비율') || text.includes('단순경비율') || text.includes('수입종류') || text.includes('사업장별 수입금액');
+  const isWorkIncome = !isBizNotice && (
+    /근로소득\s*(원천징수영수증|지\s*급\s*명\s*세\s*서)/.test(text) ||
+    /근로소득지급명세서|근로소득원천징수/.test(filename.replace(/[_\s]/g,''))
+  );
 
   // ── 이름 자동 추출 ──
   const namePatterns = [
@@ -450,15 +452,32 @@ function parseText(text, filename){
   }
 
   // ── 업종코드 + 수입금액 개별 파싱 ──
-  // 패턴: "940305 단독 간편장부 기준 5,000,000" 또는 "940305 공동 복식부기 기준 31,747,130"
+  // 패턴: "940200 단독 복식부기 기준 101,848" 또는 "940305 단독 간편장부 기준 5,000,000"
+  // PDF.js 줄바꿈 때문에 중간에 공백/줄바꿈 다양하게 허용
   const codeAmtPairs = [];
-  const caPattern = /(\d{6})\s+(?:단독|공동)\s+(?:간편장부|복식부기)\s+(?:기준|단순)\s+([\d,]+)/g;
+  const caPattern = /(\d{6})\s+(?:단독|공동)[\s\S]{0,40}?(?:간편장부|복식부기)[\s\S]{0,20}?(?:기준|단순)\s+([\d,]{3,})/g;
   let caMatch;
+  const seenCodes = new Set();
   while((caMatch = caPattern.exec(text)) !== null){
     const code = caMatch[1];
     const amt = parseNum(caMatch[2]);
-    if(IC.some(d=>d.c===code) && amt > 0){
+    if(IC.some(d=>d.c===code) && amt > 0 && !seenCodes.has(code)){
+      seenCodes.add(code);
       codeAmtPairs.push({code, amt});
+    }
+  }
+  // fallback — 단독/공동 뒤 숫자만 잡는 더 넓은 패턴
+  if(!codeAmtPairs.length){
+    const fbPattern = /(\d{6})\s+(?:단독|공동)\s+[\s\S]{0,60}?([\d,]{5,})/g;
+    let fbM;
+    const fbSeen = new Set();
+    while((fbM = fbPattern.exec(text)) !== null){
+      const code = fbM[1];
+      const amt = parseNum(fbM[2]);
+      if(IC.some(d=>d.c===code) && amt > 0 && !fbSeen.has(code)){
+        fbSeen.add(code);
+        codeAmtPairs.push({code, amt});
+      }
     }
   }
   const uniqueCodes = [...new Set(codeAmtPairs.map(p=>p.code))];
