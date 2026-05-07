@@ -98,7 +98,7 @@ input:focus,select:focus{outline:none;border-color:#185FA5;}
 <div class="container">
 <a class="back" href="index.html">← 인덱스로 돌아가기</a>
 <h1>🧮 세금 비교 시뮬레이터</h1>
-<p class="sub">2025년 귀속 종합소득세 · 추계(기준) / 추계(단순) / 장부 3가지 비교</p>
+<p class="sub">2025년 귀속 종합소득세 · 추계(기준) / 추계(단순) / 장부 3가지 비교 <span style="color:#185FA5;font-weight:600;">v16</span></p>
 
 <!-- 이름 입력 -->
 <div class="name-bar">
@@ -205,28 +205,65 @@ input:focus,select:focus{outline:none;border-color:#185FA5;}
     </div>
   </div>
 
-  <!-- 근로소득 합산 섹션 -->
-  <div class="work-income-section" id="work-section" style="margin-top:14px;padding-top:14px;border-top:1px solid #f0eeea;">
-    <div style="font-size:12px;font-weight:700;color:#185FA5;margin-bottom:10px;">📄 근로소득 상세 (원천징수영수증 기준)</div>
-    <div class="fg">
+  <!-- ★ 추가공제 (장애인/경로우대/한부모/부녀자/자녀세액공제) -->
+  <div style="margin-top:14px;padding-top:14px;border-top:1px solid #f0eeea;">
+    <div style="font-size:12px;font-weight:700;color:#185FA5;margin-bottom:10px;">👨‍👩‍👧 추가공제 항목</div>
+    <div class="f3">
       <div>
-        <label>총급여액 (원)</label>
-        <input type="number" id="work-salary" placeholder="원천징수영수증 ⑯ 총급여" oninput="calcWorkDeduct()">
+        <label>장애인 인원 (1인당 200만원)</label>
+        <input type="number" id="dis" placeholder="0" min="0" value="0">
       </div>
       <div>
-        <label>근로소득공제 (자동계산)</label>
-        <input type="number" id="work-deduct" placeholder="자동계산" readonly style="background:#f8f8f6;color:#888;">
+        <label>경로우대 인원 70세↑ (1인당 100만원)</label>
+        <input type="number" id="eld" placeholder="0" min="0" value="0">
       </div>
       <div>
-        <label>근로소득금액 (자동계산)</label>
-        <input type="number" id="work-income" placeholder="자동계산" readonly style="background:#f8f8f6;color:#888;">
+        <label>한부모공제 (100만원)</label>
+        <select id="single-parent">
+          <option value="0">해당없음</option>
+          <option value="1">해당 (100만원)</option>
+        </select>
       </div>
       <div>
-        <label>근로소득 결정세액 (원)</label>
-        <input type="number" id="work-tax" placeholder="원천징수영수증 ⑦ 결정세액">
+        <label>부녀자공제 (50만원)</label>
+        <select id="female">
+          <option value="0">해당없음</option>
+          <option value="1">해당 (50만원)</option>
+        </select>
+      </div>
+      <div>
+        <label>자녀세액공제 — 자녀 인원 (8세↑)</label>
+        <input type="number" id="child-cnt" placeholder="0" min="0" value="0">
+      </div>
+      <div>
+        <label>출산·입양 자녀 (당해연도)</label>
+        <select id="newborn">
+          <option value="0">해당없음</option>
+          <option value="1">첫째 (30만원)</option>
+          <option value="2">둘째 (50만원)</option>
+          <option value="3">셋째이상 (70만원)</option>
+        </select>
       </div>
     </div>
-    <div style="font-size:11px;color:#888;margin-top:6px;">※ 근로소득금액이 사업소득금액에 합산되어 종합소득세가 계산됩니다.</div>
+    <div style="font-size:11px;color:#888;margin-top:8px;line-height:1.5;">
+      ※ 한부모공제와 부녀자공제는 중복 불가 — 한부모 우선 적용. 부녀자공제는 종합소득금액 3천만원 이하만 적용.<br>
+      ※ 자녀세액공제: 1명 25만원 / 2명 55만원 / 3명 이상 (55만원 + 추가 1명당 40만원). 8세 미만은 별도 자녀장려금 영역으로 미반영.
+    </div>
+  </div>
+
+  <!-- 근로소득 합산 섹션 (다중 근무지 지원) -->
+  <div class="work-income-section" id="work-section" style="margin-top:14px;padding-top:14px;border-top:1px solid #f0eeea;">
+    <div style="font-size:12px;font-weight:700;color:#185FA5;margin-bottom:10px;">📄 근로소득 상세 (원천징수영수증 기준 — 근무지별 입력)</div>
+    <div id="work-rows" style="display:flex;flex-direction:column;gap:10px;"></div>
+    <button class="add-row-btn" onclick="addWorkRow()" style="margin-top:8px;">+ 근무지 추가</button>
+    <div style="margin-top:10px;padding:8px 12px;background:#EAF3DE;border-radius:8px;font-size:12px;color:#27500A;">
+      <div style="display:flex;justify-content:space-between;"><span>총급여 합계:</span><strong id="work-salary-sum">0원</strong></div>
+      <div style="display:flex;justify-content:space-between;margin-top:3px;"><span>근로소득공제 (합산 총급여 기준):</span><strong id="work-deduct-sum">0원</strong></div>
+      <div style="display:flex;justify-content:space-between;margin-top:3px;"><span>근로소득금액 합계:</span><strong id="work-income-sum">0원</strong></div>
+      <div style="display:flex;justify-content:space-between;margin-top:3px;"><span>근로소득 결정세액 합계:</span><strong id="work-tax-sum">0원</strong></div>
+    </div>
+    <div id="work-merge-warn" style="display:none;margin-top:8px;padding:8px 12px;background:#FAEEDA;border-radius:8px;font-size:11px;color:#633806;line-height:1.5;"></div>
+    <div style="font-size:11px;color:#888;margin-top:6px;">※ 근로소득금액 합계가 사업소득금액에 합산되어 종합소득세가 계산됩니다. 결정세액 합계는 기납부세액으로 차감됩니다.<br>※ 2개 이상 근무지가 있을 경우, 근로소득공제는 <strong>합산 총급여 기준 단일 계산</strong>입니다 (소득세법 §47 / 홈택스 동일 방식).</div>
   </div>
 </div>
 
@@ -357,22 +394,134 @@ function updateTotalRev(){
   document.getElementById('total-rev-display').textContent = F(total)+'원';
 }
 
-// ===== 근로소득 =====
+// ===== 근로소득 (다중 근무지) =====
+let workIdx = 0;
+
 function toggleWork(){
   const v = document.getElementById('other-type').value;
-  document.getElementById('work-section').classList.toggle('show', v==='근로소득');
+  const sec = document.getElementById('work-section');
+  sec.classList.toggle('show', v==='근로소득');
+  // 처음 펼칠 때 행이 없으면 1개 추가
+  if(v==='근로소득' && document.querySelectorAll('.work-row').length===0){
+    addWorkRow();
+  }
 }
 
-function calcWorkDeduct(){
-  const s = N(document.getElementById('work-salary').value);
+function addWorkRow(){
+  workIdx++;
+  const i = workIdx;
+  const wrap = document.getElementById('work-rows');
+  const row = document.createElement('div');
+  row.className = 'work-row';
+  row.dataset.idx = i;
+  row.style.cssText = 'background:#fafaf8;border:1px solid #eee;border-radius:8px;padding:10px 12px;';
+  row.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <div style="font-size:12px;font-weight:600;color:#185FA5;">근무지 #${i}</div>
+      <button class="rb" style="font-size:11px;padding:3px 9px;" onclick="removeWorkRow(${i})">✕ 삭제</button>
+    </div>
+    <div class="f3">
+      <div>
+        <label>근무지명 (선택)</label>
+        <input type="text" class="w-name" placeholder="회사명 (선택)">
+      </div>
+      <div>
+        <label>총급여액 (원)</label>
+        <input type="number" class="w-salary" placeholder="원천징수영수증 ⑯" oninput="calcWorkRow(${i})">
+      </div>
+      <div>
+        <label>결정세액 (원)</label>
+        <input type="number" class="w-tax" placeholder="원천징수영수증 ⑦" oninput="updateWorkSum()">
+      </div>
+      <div>
+        <label>근로소득공제 (자동)</label>
+        <input type="number" class="w-deduct" readonly style="background:#f4f3ef;color:#888;">
+      </div>
+      <div>
+        <label>근로소득금액 (자동)</label>
+        <input type="number" class="w-income" readonly style="background:#f4f3ef;color:#888;">
+      </div>
+    </div>`;
+  wrap.appendChild(row);
+  updateWorkSum();
+}
+
+function removeWorkRow(i){
+  const row = document.querySelector('.work-row[data-idx="'+i+'"]');
+  if(row) row.remove();
+  // 모든 행 삭제 시 1개 자동 추가
+  if(document.querySelectorAll('.work-row').length===0){
+    addWorkRow();
+  }
+  updateWorkSum();
+}
+
+// ★ 근로소득공제 계산 (소득세법 §47) - 총급여 기준 단일 계산
+function calcWorkDeductFromSalary(s){
   let d = 0;
   if(s<=5000000) d=s;
   else if(s<=15000000) d=5000000+(s-5000000)*0.5;
   else if(s<=45000000) d=7500000+(s-15000000)*0.15;
   else if(s<=100000000) d=12000000+(s-45000000)*0.05;
   else d=Math.min(14750000+(s-100000000)*0.02,20000000);
-  document.getElementById('work-deduct').value = Math.round(d);
-  document.getElementById('work-income').value = Math.round(Math.max(0,s-d));
+  return Math.round(d);
+}
+
+// ★ 행별 표시는 단독신고 가정의 참고용 (실제는 합산 후 재계산)
+function calcWorkRow(i){
+  const row = document.querySelector('.work-row[data-idx="'+i+'"]');
+  if(!row) return;
+  const s = N(row.querySelector('.w-salary').value);
+  const d = calcWorkDeductFromSalary(s);
+  row.querySelector('.w-deduct').value = d;
+  row.querySelector('.w-income').value = Math.round(Math.max(0,s-d));
+  updateWorkSum();
+}
+
+// ★ 핵심수정: 합산 총급여로 근로소득공제 1회 계산 (홈택스 방식)
+// 2개 이상 근무지 합산신고 시(소득세법 §70②), 각 근무지별 공제액 합이 아닌
+// 합산 총급여에 공제율을 적용한 단일 금액이 정답 (소득세법 §47).
+function getWorkTotals(){
+  let salary = 0, tax = 0;
+  document.querySelectorAll('.work-row').forEach(row=>{
+    salary += N(row.querySelector('.w-salary').value);
+    tax    += N(row.querySelector('.w-tax').value);
+  });
+  const deduct = calcWorkDeductFromSalary(salary);
+  const income = Math.max(0, salary - deduct);
+  return { salary, income, tax, deduct };
+}
+
+function updateWorkSum(){
+  const t = getWorkTotals();
+  const sumS = document.getElementById('work-salary-sum');
+  const sumI = document.getElementById('work-income-sum');
+  const sumT = document.getElementById('work-tax-sum');
+  const sumD = document.getElementById('work-deduct-sum');
+  if(sumS) sumS.textContent = F(t.salary)+'원';
+  if(sumI) sumI.textContent = F(t.income)+'원';
+  if(sumT) sumT.textContent = F(t.tax)+'원';
+  if(sumD) sumD.textContent = F(t.deduct)+'원';
+  // 다중 근무지인데 행별 공제 합과 합산공제가 다르면 경고 표시
+  const rows = document.querySelectorAll('.work-row');
+  let rowDeductSum = 0;
+  rows.forEach(r=>{ rowDeductSum += N(r.querySelector('.w-deduct').value); });
+  const warnEl = document.getElementById('work-merge-warn');
+  if(warnEl){
+    if(rows.length >= 2 && Math.abs(rowDeductSum - t.deduct) > 1){
+      warnEl.style.display = 'block';
+      warnEl.innerHTML = `⚠️ <strong>다중 근무지 합산</strong>: 행별 근로소득공제 합 ${F(rowDeductSum)}원이 아닌, <strong>합산 총급여 ${F(t.salary)}원에 공제율 적용한 ${F(t.deduct)}원</strong>이 적용됩니다 (소득세법 §47).`;
+    } else {
+      warnEl.style.display = 'none';
+    }
+  }
+}
+
+// ★ 다중 근로소득에서 합산이 2개 이상이면 합산신고가 의무 (안내용)
+function isMultiWork(){
+  return document.querySelectorAll('.work-row').filter
+    ? Array.from(document.querySelectorAll('.work-row')).filter(r => N(r.querySelector('.w-salary').value) > 0).length >= 2
+    : false;
 }
 
 // ===== PDF 파싱 =====
@@ -736,17 +885,30 @@ function applyParsed(){
   if(parsedData.isWorkIncome){
     document.getElementById('other-type').value = '근로소득';
     toggleWork();
+    // 빈 행이 있으면 첫 번째 행에 채우고, 아니면 새 행 추가
+    let firstEmpty = null;
+    document.querySelectorAll('.work-row').forEach(r=>{
+      if(!firstEmpty && !N(r.querySelector('.w-salary').value) && !N(r.querySelector('.w-tax').value)) firstEmpty = r;
+    });
+    if(!firstEmpty){
+      addWorkRow();
+      const all = document.querySelectorAll('.work-row');
+      firstEmpty = all[all.length-1];
+    }
+    const idx = firstEmpty.dataset.idx;
     if(parsedData.workSalary){
-      document.getElementById('work-salary').value = parsedData.workSalary;
-      calcWorkDeduct();
+      firstEmpty.querySelector('.w-salary').value = parsedData.workSalary;
+      calcWorkRow(idx);
     }
-    // 근로소득금액이 파싱됐으면 직접 덮어쓰기
     if(parsedData.workIncomeFinal){
-      document.getElementById('work-income').value = parsedData.workIncomeFinal;
+      firstEmpty.querySelector('.w-income').value = parsedData.workIncomeFinal;
     }
-    if(parsedData.workTax) document.getElementById('work-tax').value = parsedData.workTax;
+    if(parsedData.workTax){
+      firstEmpty.querySelector('.w-tax').value = parsedData.workTax;
+    }
+    updateWorkSum();
     switchTab('manual');
-    alert('근로소득 정보가 반영되었습니다.\n총급여와 결정세액을 확인 후 사업소득 안내문도 추가로 업로드하거나 직접 입력해주세요.');
+    alert('근로소득 정보가 반영되었습니다.\n근무지가 더 있으면 "+ 근무지 추가" 버튼으로 추가하세요.\n사업소득 안내문도 추가로 업로드하거나 직접 입력해주세요.');
     return;
   }
 
@@ -903,30 +1065,66 @@ function getTaxRate(base){
 function calcAll(bizIncome, opts){
   opts = opts || {};
   const noBookPenalty = opts.noBookPenalty || false; // 무기장가산세 적용 여부
-  const pers = N(document.getElementById('pers').value)*1500000;
+  const persCount = N(document.getElementById('pers').value);
+  const pers = persCount * 1500000;
   const pen = N(document.getElementById('pen').value);
   const nk = N(document.getElementById('nk').value);
   const wh = N(document.getElementById('wh').value);
   const pp = N(document.getElementById('pp').value);
   const otherType = document.getElementById('other-type').value;
   
-  // 근로소득금액
+  // ★ 추가공제 (장애인/경로우대/한부모/부녀자)
+  const disCnt = N(document.getElementById('dis')?.value);
+  const eldCnt = N(document.getElementById('eld')?.value);
+  const singleParent = N(document.getElementById('single-parent')?.value);
+  const female = N(document.getElementById('female')?.value);
+  const disDeduct = disCnt * 2000000;        // 장애인 1인당 200만원
+  const eldDeduct = eldCnt * 1000000;        // 경로우대 1인당 100만원
+  // 한부모(100만원) vs 부녀자(50만원) — 중복 불가, 한부모 우선
+  let extraFamilyDeduct = 0;
+  if(singleParent === 1) extraFamilyDeduct = 1000000;
+  else if(female === 1) extraFamilyDeduct = 500000;
+  // (참고) 부녀자공제는 종합소득금액 3천만원 이하만 적용 — 아래에서 체크
+  
+  // ★ 자녀세액공제
+  const childCnt = N(document.getElementById('child-cnt')?.value);
+  const newborn = N(document.getElementById('newborn')?.value);
+  let childTaxCredit = 0;
+  // 8세 이상 자녀: 1명 25만원 / 2명 55만원 / 3명 이상 (55만원 + 추가 1명당 40만원)
+  if(childCnt === 1) childTaxCredit = 250000;
+  else if(childCnt === 2) childTaxCredit = 550000;
+  else if(childCnt >= 3) childTaxCredit = 550000 + (childCnt - 2) * 400000;
+  // 출산·입양 추가공제: 첫째 30만 / 둘째 50만 / 셋째이상 70만
+  if(newborn === 1) childTaxCredit += 300000;
+  else if(newborn === 2) childTaxCredit += 500000;
+  else if(newborn === 3) childTaxCredit += 700000;
+  
+  // ★ 근로소득금액 합계 (다중 근무지)
   let workIncome = 0;
   let workTax = 0;
   if(otherType==='근로소득'){
-    workIncome = N(document.getElementById('work-income').value);
-    workTax = N(document.getElementById('work-tax').value);
+    const wt = (typeof getWorkTotals === 'function') ? getWorkTotals() : {income:0, tax:0};
+    workIncome = wt.income;
+    workTax = wt.tax;
   }
   
   // 노란우산 한도
   const totalInc = bizIncome + workIncome;
   let nkLim = totalInc<=40000000?6000000:totalInc<=60000000?5000000:totalInc<=100000000?4000000:2000000;
   
-  const deduct = pers + pen + Math.min(nk, nkLim);
-  const tb = Math.max(0, bizIncome + workIncome - deduct);
+  // ★ 부녀자공제는 종합소득금액 3천만원 이하만 — 조건 미충족 시 제외
+  let appliedExtraFamily = extraFamilyDeduct;
+  if(singleParent !== 1 && female === 1 && totalInc > 30000000){
+    appliedExtraFamily = 0; // 부녀자공제 제외
+  }
+  
+  const extraDeduct = disDeduct + eldDeduct + appliedExtraFamily;
+  const deduct = pers + extraDeduct + pen + Math.min(nk, nkLim);
+  const tb = Math.max(0, totalInc - deduct);
   const rawTax = calcIncomeTax(tb);
-  const cr = 70000; // 세액공제 70,000원 (표준세액공제 기준)
-  const detBeforePenalty = Math.max(0, Math.round(rawTax - cr));
+  const baseCr = 70000;        // 표준세액공제
+  const totalCr = baseCr + childTaxCredit;
+  const detBeforePenalty = Math.max(0, Math.round(rawTax - totalCr));
   // ★ 무기장가산세: 산출세액 × (사업소득금액/종합소득금액) × 20%
   let noBookPen = 0;
   if(noBookPenalty && totalInc > 0 && bizIncome > 0){
@@ -940,11 +1138,15 @@ function calcAll(bizIncome, opts){
   const pay = total - totalPaid;
   
   return{
-    biz:bizIncome, work:workIncome, total_inc:bizIncome+workIncome,
+    biz:bizIncome, work:workIncome, total_inc:totalInc,
     deduct:Math.round(deduct), tb:Math.round(tb),
-    rawTax:Math.round(rawTax), cr, det, loc, total, rate,
+    rawTax:Math.round(rawTax), cr: totalCr, det, loc, total, rate,
     wh, pp, workTax, totalPaid, pay,
-    noBookPen, detBeforePenalty   // ★ 신규
+    noBookPen, detBeforePenalty,
+    // ★ 신규: 공제 내역 분해 (UI 표시용)
+    persDeduct: pers, extraDeduct, penDeduct: pen, nkDeduct: Math.min(nk, nkLim),
+    disDeduct, eldDeduct, familyDeduct: appliedExtraFamily,
+    baseCr, childTaxCredit
   };
 }
 
@@ -989,19 +1191,19 @@ function calc(){
   let i1_raw = Math.round(totalRev * (1 - stdRateApplied));
   const i2 = Math.round(totalRev - simpExpense);
   
-  // ★ 소득상한배율 (소득칙§67): 기준경비율 소득금액이 단순경비율 소득금액의 배율 이상이면 상한 적용
-  // 인적용역(94 코드)은 2.8배, 그 외 복식부기의무자 3.4배, 간편장부대상자는 적용 안 함
+  // ★ 소득상한배율 (소득칙§67, 2020-2027 귀속): 
+  //    간편장부대상자 2.8배, 복식부기의무자 3.4배
+  //    (이전 코드의 "인적용역 2.8배 / 그 외 3.4배" 분기는 오류)
+  //    추계신고 시 기준경비율 소득금액이 단순경비율 소득금액 × 배율을 초과하면 상한 적용
   let i1 = i1_raw;
   let upperLimitApplied = false;
-  if(isDoubleEntry){
-    // 주업종이 인적용역(94 시작)인지 확인
-    const mainIsHumanService = incomes.length && incomes.reduce((a,b)=>a.amt>b.amt?a:b).code.startsWith('94');
-    const upperLimitMultiplier = mainIsHumanService ? 2.8 : 3.4;
-    const upperLimit = Math.round(i2 * upperLimitMultiplier);
-    if(i1_raw > upperLimit){
-      i1 = upperLimit;
-      upperLimitApplied = true;
-    }
+  // 간편장부대상자도 상한배율 적용 가능. 
+  // 단순경비율 적용대상자는 상한 비교 자체가 불필요하지만, 우리는 i2를 항상 계산하므로 비교 가능.
+  const upperLimitMultiplier = isDoubleEntry ? 3.4 : 2.8;
+  const upperLimit = Math.round(i2 * upperLimitMultiplier);
+  if(i1_raw > upperLimit){
+    i1 = upperLimit;
+    upperLimitApplied = true;
   }
   const i3 = Math.round(totalRev*slr);
   
@@ -1019,10 +1221,10 @@ function calc(){
   if(canUseSimpExpense) candidates.push(totalPay2);
   const minT = Math.min(...candidates);
   const stdSubLabel = isDoubleEntry 
-    ? `경비율 ${(stdRateApplied*100).toFixed(2)}% (×1/2)${upperLimitApplied?' · 상한적용':''} · 가산세 20%` 
-    : `경비율 ${(avgStd*100).toFixed(1)}%`;
+    ? `경비율 ${(stdRateApplied*100).toFixed(2)}% (×1/2)${upperLimitApplied?' · 상한 3.4배':''} · 가산세 20%` 
+    : `경비율 ${(avgStd*100).toFixed(1)}%${upperLimitApplied?' · 상한 2.8배':''}`;
   const results = [
-    {lbl:'추계 (기준경비율)', sub: stdSubLabel, inc:i1, r:r1, disabled:false, warn: isDoubleEntry?`⚠️ 복식부기의무 → 기준경비율 ×1/2 적용 + 무기장가산세 20%${upperLimitApplied?'<br>📊 소득상한배율 적용 (단순경비율 소득금액의 2.8/3.4배 한도)':''}`:''},
+    {lbl:'추계 (기준경비율)', sub: stdSubLabel, inc:i1, r:r1, disabled:false, warn: isDoubleEntry?`⚠️ 복식부기의무 → 기준경비율 ×1/2 적용 + 무기장가산세 20%${upperLimitApplied?'<br>📊 소득상한배율 적용 (단순경비율 소득금액의 3.4배 한도)':''}`:(upperLimitApplied?'📊 소득상한배율 적용 (단순경비율 소득금액의 2.8배 한도)':'')},
     {lbl:'추계 (단순경비율)', sub:`경비율 ${(avgSimpDisplay*100).toFixed(1)}%${isDoubleEntry?' · 가산세 20%':''}`, inc:i2, r:r2, disabled: !canUseSimpExpense, warn: !canUseSimpExpense ? `❌ 적용 불가 — ${simpDisableReason}` : (isDoubleEntry?'⚠️ 복식부기의무 → 무기장가산세 20%':'')},
     {lbl:'장부 신고', sub:`소득률 ${(slr*100).toFixed(0)}%${parsedData.prevIncomeRate?' · 직전 '+parsedData.prevIncomeRate+'%':''}`, inc:i3, r:r3, disabled:false, warn:''}
   ];
@@ -1035,6 +1237,14 @@ function calc(){
     const workTaxRow = d.r.workTax>0?`<div class="cr"><span class="cm">근로소득 결정세액</span><span class="crd">△${F(d.r.workTax)}원</span></div>`:'';
     // ★ 무기장가산세 행
     const penRow = d.r.noBookPen>0?`<div class="cr" style="background:#FCEBEB;margin:0 -4px;padding:4px 4px;"><span class="cm" style="color:#A32D2D;">무기장가산세 (산출세액×사업비율×20%)</span><span class="crd">+${F(d.r.noBookPen)}원</span></div>`:'';
+    // ★ 추가공제 세부 (장애인/경로/한부모/부녀자) 표시용
+    const extraDeductDesc = [];
+    if(d.r.disDeduct>0) extraDeductDesc.push(`장애인 ${F(d.r.disDeduct)}`);
+    if(d.r.eldDeduct>0) extraDeductDesc.push(`경로 ${F(d.r.eldDeduct)}`);
+    if(d.r.familyDeduct>0) extraDeductDesc.push(`한부모/부녀 ${F(d.r.familyDeduct)}`);
+    const extraDeductRow = d.r.extraDeduct>0 ? `<div class="cr" style="background:#F1EFE8;margin:0 -4px;padding:4px 4px;"><span class="cm" style="color:#444441;font-size:11px;">└ 추가공제 (${extraDeductDesc.join(', ')})</span><span class="crd">△${F(d.r.extraDeduct)}원</span></div>` : '';
+    // ★ 자녀세액공제 별도 표시
+    const childCrRow = d.r.childTaxCredit>0 ? `<div class="cr" style="background:#EAF3DE;margin:0 -4px;padding:4px 4px;"><span class="cm" style="color:#27500A;font-size:11px;">└ 자녀세액공제</span><span class="crd">△${F(d.r.childTaxCredit)}원</span></div>` : '';
     // 소득세분 납부(환급) = 결정세액 - 기납부세액
     const incomeTaxPay = d.r.det - (d.r.wh + d.r.pp);
     // 총 납부(환급) = 소득세분 + 지방소득세
@@ -1051,11 +1261,13 @@ function calc(){
       ${workRow}
       <div class="cr"><span style="font-weight:600;">종합소득금액</span><span style="font-weight:600;">${F(d.r.total_inc)}원</span></div>
       <div class="cr"><span class="cm">소득공제 계</span><span class="crd">△${F(d.r.deduct)}원</span></div>
+      ${extraDeductRow}
       <div class="cr"><span style="font-weight:600;">과세표준</span><span style="font-weight:600;">${F(d.r.tb)}원</span></div>
       <div class="cr"><span class="cm">세율</span><span>${d.r.rate}%</span></div>
       <div class="cr"><span class="cm">산출세액</span><span>${F(d.r.rawTax)}원</span></div>
       <div class="cr"><span class="cm">세액감면</span><span class="crd">△0원</span></div>
-      <div class="cr"><span class="cm">세액공제</span><span class="crd">△${F(d.r.cr)}원</span></div>
+      <div class="cr"><span class="cm">세액공제 (표준 7만원)</span><span class="crd">△${F(d.r.baseCr||70000)}원</span></div>
+      ${childCrRow}
       ${penRow}
       <div class="cr" style="border-top:1px solid #e8e6df;padding-top:5px;margin-top:3px;">
         <span style="font-weight:600;">결정세액</span><span style="font-weight:600;">${F(d.r.det)}원</span>
