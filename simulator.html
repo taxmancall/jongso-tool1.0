@@ -645,9 +645,9 @@ function parseText(text, filename){
   }
   html += `<span style="font-size:11px;color:#27500A;">파일을 추가로 업로드하면 누적됩니다. 모두 올렸으면 "반영하기"를 누르세요.</span>`;
 
-  const resultEl = document.getElementById('parsed-result');
-  resultEl.innerHTML = html;
-  resultEl.classList.add('show');
+  const resultBox = document.getElementById('parsed-result');
+  resultBox.innerHTML = html;
+  resultBox.classList.add('show');
   status.innerHTML = `✓ 파싱 완료 (${parsedData.codeAmtPairs.length}개 업종, ${parsedData.hasWork?'근로소득 포함':'사업소득만'}) &nbsp;<button onclick="resetParsed()" style="font-size:11px;padding:2px 8px;border:1px solid #ddd;border-radius:4px;background:#fff;cursor:pointer;color:#888;">초기화</button>`;
   status.className = 'parse-status ok';
 }
