@@ -851,7 +851,10 @@ function getIncomes(){
     // 단순경비율 초과율 및 기준금액
     const icItem = IC.find(d=>d.c===code);
     const simpOver = icItem ? icItem.so : simp;
-    const stdAmt = icItem ? icItem.sa : 24000000;
+    // ★ 인적용역(94 코드)은 단순경비율 적용 기준금액이 4천만원 (소득령 §143④)
+    // 데이터의 sa 값이 부정확할 수 있어 코드 기반으로 강제 보정
+    let stdAmt = icItem ? icItem.sa : 24000000;
+    if(code && code.startsWith('94')) stdAmt = 40000000;
     if(amt>0) result.push({amt, code, simp, std, simpOver, stdAmt});
   });
   return result;
@@ -981,8 +984,25 @@ function calc(){
   const simpExpense = calcSimpExpense(incomes);
   const avgSimpDisplay = totalRev>0 ? (simpExpense/totalRev) : 0.60; // 표시용
 
-  const i1 = Math.round(totalRev*(1-avgStd));
+  // ★ 복식부기의무자 추계(기준경비율) 시: 기준경비율 × 1/2 적용 (소득령 §143③ 1호 다목 단서)
+  const stdRateApplied = isDoubleEntry ? avgStd * 0.5 : avgStd;
+  let i1_raw = Math.round(totalRev * (1 - stdRateApplied));
   const i2 = Math.round(totalRev - simpExpense);
+  
+  // ★ 소득상한배율 (소득칙§67): 기준경비율 소득금액이 단순경비율 소득금액의 배율 이상이면 상한 적용
+  // 인적용역(94 코드)은 2.8배, 그 외 복식부기의무자 3.4배, 간편장부대상자는 적용 안 함
+  let i1 = i1_raw;
+  let upperLimitApplied = false;
+  if(isDoubleEntry){
+    // 주업종이 인적용역(94 시작)인지 확인
+    const mainIsHumanService = incomes.length && incomes.reduce((a,b)=>a.amt>b.amt?a:b).code.startsWith('94');
+    const upperLimitMultiplier = mainIsHumanService ? 2.8 : 3.4;
+    const upperLimit = Math.round(i2 * upperLimitMultiplier);
+    if(i1_raw > upperLimit){
+      i1 = upperLimit;
+      upperLimitApplied = true;
+    }
+  }
   const i3 = Math.round(totalRev*slr);
   
   // ★ 추계 신고 시 복식부기의무자는 무기장가산세 20% 적용
@@ -998,8 +1018,11 @@ function calc(){
   const candidates = [totalPay1, totalPay3];
   if(canUseSimpExpense) candidates.push(totalPay2);
   const minT = Math.min(...candidates);
+  const stdSubLabel = isDoubleEntry 
+    ? `경비율 ${(stdRateApplied*100).toFixed(2)}% (×1/2)${upperLimitApplied?' · 상한적용':''} · 가산세 20%` 
+    : `경비율 ${(avgStd*100).toFixed(1)}%`;
   const results = [
-    {lbl:'추계 (기준경비율)', sub:`경비율 ${(avgStd*100).toFixed(1)}%${isDoubleEntry?' · 가산세 20%':''}`, inc:i1, r:r1, disabled:false, warn: isDoubleEntry?'⚠️ 복식부기의무 → 무기장가산세 20%':''},
+    {lbl:'추계 (기준경비율)', sub: stdSubLabel, inc:i1, r:r1, disabled:false, warn: isDoubleEntry?`⚠️ 복식부기의무 → 기준경비율 ×1/2 적용 + 무기장가산세 20%${upperLimitApplied?'<br>📊 소득상한배율 적용 (단순경비율 소득금액의 2.8/3.4배 한도)':''}`:''},
     {lbl:'추계 (단순경비율)', sub:`경비율 ${(avgSimpDisplay*100).toFixed(1)}%${isDoubleEntry?' · 가산세 20%':''}`, inc:i2, r:r2, disabled: !canUseSimpExpense, warn: !canUseSimpExpense ? `❌ 적용 불가 — ${simpDisableReason}` : (isDoubleEntry?'⚠️ 복식부기의무 → 무기장가산세 20%':'')},
     {lbl:'장부 신고', sub:`소득률 ${(slr*100).toFixed(0)}%${parsedData.prevIncomeRate?' · 직전 '+parsedData.prevIncomeRate+'%':''}`, inc:i3, r:r3, disabled:false, warn:''}
   ];
