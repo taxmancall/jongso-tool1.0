@@ -471,23 +471,31 @@ function parseText(text, filename){
   }
 
   // ── 업종코드 + 수입금액 개별 파싱 ──
-  // 패턴: "940200 단독 복식부기 기준 101,848" 또는 "940305 단독 간편장부 기준 5,000,000"
-  // PDF.js 줄바꿈 때문에 중간에 공백/줄바꿈 다양하게 허용
+  // PDF.js 추출 시 수입금액 뒤에 경비율 정수부가 붙는 경우 처리
+  // 예: "940903 단독간편장부기준 275,00015.4%" → 275,000
+  // 예: "940200 단독복식부기기준 101,848 16.6%" → 101,848
   const codeAmtPairs = [];
-  const caPattern = /(\d{6})\s+(?:단독|공동)[\s\S]{0,40}?(?:간편장부|복식부기)[\s\S]{0,20}?(?:기준|단순)\s+([\d,]{3,})/g;
-  let caMatch;
   const seenCodes = new Set();
+  const caPattern = /(\d{6})\s*(?:단독|공동)\s*(?:간편장부|복식부기)\s*(?:기준|단순)\s*([\d,]+?)(\d{1,2}\.\d|\s|$)/g;
+  let caMatch;
   while((caMatch = caPattern.exec(text)) !== null){
     const code = caMatch[1];
-    const amt = parseNum(caMatch[2]);
+    let rawAmt = caMatch[2];
+    const nextPart = caMatch[3];
+    // 수입금액 끝에 경비율 정수부가 붙은 경우 제거 ("275,00015" → "275,000")
+    if(nextPart && nextPart.includes('.')){
+      const intPart = nextPart.split('.')[0];
+      if(rawAmt.endsWith(intPart)) rawAmt = rawAmt.slice(0, -intPart.length);
+    }
+    const amt = parseNum(rawAmt);
     if(IC.some(d=>d.c===code) && amt > 0 && !seenCodes.has(code)){
       seenCodes.add(code);
       codeAmtPairs.push({code, amt});
     }
   }
-  // fallback — 단독/공동 뒤 숫자만 잡는 더 넓은 패턴
+  // fallback
   if(!codeAmtPairs.length){
-    const fbPattern = /(\d{6})\s+(?:단독|공동)\s+[\s\S]{0,60}?([\d,]{5,})/g;
+    const fbPattern = /(\d{6})\s*(?:단독|공동)[\s\S]{0,60}?([\d,]{5,})/g;
     let fbM;
     const fbSeen = new Set();
     while((fbM = fbPattern.exec(text)) !== null){
