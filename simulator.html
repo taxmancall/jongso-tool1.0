@@ -76,7 +76,22 @@ input:focus,select:focus{outline:none;border-color:#185FA5;}
 .parse-status{font-size:12px;color:#888;margin-top:6px;}
 .parse-status.ok{color:#3B6D11;}
 .parse-status.err{color:#A32D2D;}
-@media(max-width:640px){.fg{grid-template-columns:1fr;}.f3{grid-template-columns:1fr;}.compare-grid{grid-template-columns:1fr;}.notice-grid{grid-template-columns:1fr;}.income-row{grid-template-columns:1fr 1fr;}.income-row .rb{grid-column:2;}}
+.name-bar{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid #e8e6df;border-radius:10px;padding:10px 14px;margin-bottom:14px;}
+.name-bar label{font-size:12px;color:#555;font-weight:600;white-space:nowrap;margin-bottom:0;}
+.name-bar input{flex:1;padding:6px 10px;border:1px solid #ddd;border-radius:7px;font-size:14px;font-weight:500;}
+.name-bar input:focus{outline:none;border-color:#185FA5;}
+.pdf-btn{padding:10px 20px;border-radius:10px;border:none;background:#3B6D11;color:#fff;cursor:pointer;font-size:14px;font-weight:700;font-family:inherit;display:none;width:100%;margin-top:8px;}
+.pdf-btn:hover{background:#2d5209;}
+@media print{
+  a.back,.tab-row,.card-title,.upload-zone,.parse-status,.parsed-result,.calc-btn,.pdf-btn,.add-row-btn,.rb,.slider-wrap,.work-income-section,.search-wrap,.dropdown,.selected-industry,#upload-section{display:none!important;}
+  body{background:#fff;}
+  .container{padding:10px;}
+  .card{border:1px solid #ccc;box-shadow:none;break-inside:avoid;}
+  .compare-grid{grid-template-columns:repeat(3,1fr)!important;}
+  .cc.best{border:2px solid #185FA5;}
+  .hidden{display:block!important;}
+  #result{display:block!important;}
+}
 </style>
 </head>
 <body>
@@ -84,6 +99,12 @@ input:focus,select:focus{outline:none;border-color:#185FA5;}
 <a class="back" href="index.html">← 인덱스로 돌아가기</a>
 <h1>🧮 세금 비교 시뮬레이터</h1>
 <p class="sub">2025년 귀속 종합소득세 · 추계(기준) / 추계(단순) / 장부 3가지 비교</p>
+
+<!-- 이름 입력 -->
+<div class="name-bar">
+  <label>👤 고객 성명</label>
+  <input type="text" id="client-name" placeholder="성명 입력 (PDF 저장 시 파일명으로 사용)">
+</div>
 
 <!-- 입력 방식 탭 -->
 <div class="tab-row">
@@ -232,6 +253,7 @@ input:focus,select:focus{outline:none;border-color:#185FA5;}
     <div class="card-title">ℹ️ 소득금액 확정에 따른 영향</div>
     <div class="notice-grid" id="notices"></div>
   </div>
+  <button class="pdf-btn" id="pdf-btn" onclick="savePDF()">🖨️ 결과 PDF 저장</button>
 </div>
 </div>
 
@@ -371,11 +393,26 @@ function handleFiles(files){
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
         const pdf = await pdfjsLib.getDocument({data: new Uint8Array(e.target.result)}).promise;
         let fullText = '';
-        for(let i=1;i<=pdf.numPages;i++){
+        for(let i=1;i<=Math.min(pdf.numPages,3);i++){
           const page = await pdf.getPage(i);
           const tc = await page.getTextContent();
-          fullText += tc.items.map(item=>item.str).join(' ') + '\n';
+          // 줄바꿈 구조 보존 — y좌표 기준으로 줄 구분
+          let lastY = null;
+          let lineText = '';
+          for(const item of tc.items){
+            const y = item.transform ? Math.round(item.transform[5]) : null;
+            if(lastY !== null && y !== null && Math.abs(y - lastY) > 3){
+              fullText += lineText.trim() + '\n';
+              lineText = item.str;
+            } else {
+              lineText += ' ' + item.str;
+            }
+            lastY = y;
+          }
+          if(lineText) fullText += lineText.trim() + '\n';
         }
+        // 디버그: 콘솔에 추출 텍스트 출력
+        console.log('[PDF 추출 텍스트]', fullText.substring(0,1000));
         parseText(fullText, file.name);
       }catch(err){
         status.textContent = '파싱 오류: '+err.message;
@@ -397,11 +434,30 @@ function parseText(text, filename){
                        /근로소득지급명세서|근로소득원천징수/.test(filename.replace(/[_\s]/g,''));
   const isBizNotice = text.includes('기장의무') || text.includes('경비율') || text.includes('수입종류');
 
-  // ── 업종코드 — "단독" 또는 "공동" 앞 6자리 (사업자등록번호 제외) ──
-  const codeMatches1 = text.match(/\b(\d{6})\s+단독/g)||[];
-  const codeMatches2 = text.match(/\b(\d{6})\s+공동/g)||[];
-  const rawCodes = [...codeMatches1,...codeMatches2].map(s=>s.match(/\d{6}/)[0]);
-  const uniqueCodes = [...new Set(rawCodes)].filter(c=>IC.some(d=>d.c===c));
+  // ── 이름 자동 추출 ──
+  const namePatterns = [
+    /성명\s+([가-힣]{2,4})\s+생년월일/,   // 종합소득세 안내문
+    /⑥\s*성\s*명\s+([가-힣]{2,4})/,       // 근로소득 원천징수영수증
+    /소득자\s*⑥\s*성\s*명\s+([가-힣]{2,4})/
+  ];
+  for(const p of namePatterns){
+    const m = text.match(p);
+    if(m){
+      const nameInput = document.getElementById('client-name');
+      if(!nameInput.value.trim()) nameInput.value = m[1]; // 비어있을 때만 자동입력
+      break;
+    }
+  }
+
+  // ── 업종코드 — 6자리 후 단독/공동 패턴 (공백 유연하게) ──
+  const codeMatches1 = [...text.matchAll(/(\d{6})\s+단독/g)].map(m=>m[1]);
+  const codeMatches2 = [...text.matchAll(/(\d{6})\s+공동/g)].map(m=>m[1]);
+  // fallback — IC DB에 있는 6자리 숫자 전체 (사업자번호 형식 XXX-XX-XXXXX 제외)
+  const allSix = [...text.matchAll(/(?<![0-9-])(\d{6})(?![0-9-])/g)].map(m=>m[1]);
+  const rawCodes = [...new Set([...codeMatches1,...codeMatches2,...allSix])].filter(c=>IC.some(d=>d.c===c));
+  // 단독/공동으로 잡힌 코드 우선, fallback은 보조
+  const priorityCodes = [...new Set([...codeMatches1,...codeMatches2])].filter(c=>IC.some(d=>d.c===c));
+  const uniqueCodes = priorityCodes.length ? priorityCodes : rawCodes.slice(0,8);
 
   // ── 총계 수입금액 ──
   let totalAmt = 0;
@@ -422,8 +478,16 @@ function parseText(text, filename){
   const nokran = nokranMatch ? parseNum(nokranMatch[1]) : 0;
 
   // ── 원천징수세액 (인적용역 사업소득) ──
-  const whMatch = text.match(/원천징수세액\s*\n?\s*\(인적용역[^)]+\)\s+([\d,]+)원/);
-  const withhold = whMatch ? parseNum(whMatch[1]) : 0;
+  const whPatterns = [
+    /원천징수세액\s*[\n\r]\s*\(인적용역[^)]+\)\s+([\d,]+)원/,
+    /\(인적용역 사업소득\)\s+([\d,]+)원/,
+    /원천징수세액[^\d\n]{0,30}([\d,]+)원\s*원천징수세액 전액/
+  ];
+  let withhold = 0;
+  for(const p of whPatterns){
+    const m = text.match(p);
+    if(m){ withhold = parseNum(m[1]); break; }
+  }
 
   // ── 중간예납 ──
   const ppMatch = text.match(/중간예납세액\s+([\d,]+)원/);
@@ -738,7 +802,18 @@ function calc(){
     <div class="ni nird"><strong>⚠️ 3.3% 프리랜서</strong>지역가입자로 소득+재산 합산 보험료 산정. 소득 신고액↑ = 보험료↑<br>사후검증(10~12월) 시 사업 무관 경비 → 추가 세금 위험.</div>`;
   
   document.getElementById('result').classList.remove('hidden');
+  document.getElementById('pdf-btn').style.display = 'block';
   document.getElementById('result').scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+// ===== PDF 저장 =====
+function savePDF(){
+  const name = document.getElementById('client-name').value.trim() || '고객';
+  // 인쇄 전 타이틀 변경
+  const origTitle = document.title;
+  document.title = name + '_종합소득세시뮬레이터';
+  window.print();
+  document.title = origTitle;
 }
 
 // 드래그 앤 드롭
