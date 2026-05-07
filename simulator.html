@@ -449,24 +449,26 @@ function parseText(text, filename){
     }
   }
 
-  // ── 업종코드 — 6자리 후 단독/공동 패턴 (공백 유연하게) ──
-  const codeMatches1 = [...text.matchAll(/(\d{6})\s+단독/g)].map(m=>m[1]);
-  const codeMatches2 = [...text.matchAll(/(\d{6})\s+공동/g)].map(m=>m[1]);
-  // fallback — IC DB에 있는 6자리 숫자 전체 (사업자번호 형식 XXX-XX-XXXXX 제외)
-  const allSix = [...text.matchAll(/(?<![0-9-])(\d{6})(?![0-9-])/g)].map(m=>m[1]);
-  const rawCodes = [...new Set([...codeMatches1,...codeMatches2,...allSix])].filter(c=>IC.some(d=>d.c===c));
-  // 단독/공동으로 잡힌 코드 우선, fallback은 보조
-  const priorityCodes = [...new Set([...codeMatches1,...codeMatches2])].filter(c=>IC.some(d=>d.c===c));
-  const uniqueCodes = priorityCodes.length ? priorityCodes : rawCodes.slice(0,8);
+  // ── 업종코드 + 수입금액 개별 파싱 ──
+  // 패턴: "940305 단독 간편장부 기준 5,000,000" 또는 "940305 공동 복식부기 기준 31,747,130"
+  const codeAmtPairs = [];
+  const caPattern = /(\d{6})\s+(?:단독|공동)\s+(?:간편장부|복식부기)\s+(?:기준|단순)\s+([\d,]+)/g;
+  let caMatch;
+  while((caMatch = caPattern.exec(text)) !== null){
+    const code = caMatch[1];
+    const amt = parseNum(caMatch[2]);
+    if(IC.some(d=>d.c===code) && amt > 0){
+      codeAmtPairs.push({code, amt});
+    }
+  }
+  const uniqueCodes = [...new Set(codeAmtPairs.map(p=>p.code))];
 
   // ── 총계 수입금액 ──
   let totalAmt = 0;
   const totalM = text.match(/총\s*계\s+([\d,]+)/);
   if(totalM){ totalAmt = parseNum(totalM[1]); }
-  if(!totalAmt){
-    // 단순/기준 바로 뒤 수입금액
-    const altM = text.match(/(?:단순|기준)\s+([\d,]{5,})/);
-    if(altM) totalAmt = parseNum(altM[1]);
+  if(!totalAmt && codeAmtPairs.length){
+    totalAmt = codeAmtPairs.reduce((s,p)=>s+p.amt, 0);
   }
 
   // ── 국민연금 ──
@@ -538,6 +540,7 @@ function parseText(text, filename){
   parsedData = {
     filename, isWorkIncome, isBizNotice,
     totalAmt, codes: uniqueCodes.slice(0,8),
+    codeAmtPairs,
     pension, nokran, withhold, prepaid,
     hasWork, hasOther, otherWithhold,
     workSalary, workTax, workDeduct, workIncomeFinal,
@@ -558,8 +561,18 @@ function parseText(text, filename){
     if(!workSalary) html += `<span style="color:#A32D2D;">⚠️ 총급여 추출 실패 — 반영 후 직접 입력해주세요.</span><br>`;
     html += `→ 근로소득 합산 섹션이 자동으로 열립니다.<br>`;
   } else {
-    if(uniqueCodes.length) html += `업종코드: <strong>${uniqueCodes.join(', ')}</strong><br>`;
-    else html += `<span style="color:#A32D2D;">⚠️ 업종코드 미감지 — 직접 검색 후 선택해주세요.</span><br>`;
+    if(codeAmtPairs.length){
+      html += `업종별 수입금액:<br>`;
+      codeAmtPairs.forEach(p=>{
+        const ic = IC.find(d=>d.c===p.code);
+        html += `&nbsp;&nbsp;<strong>${p.code}</strong> ${ic?ic.n:''} → <strong>${F(p.amt)}원</strong><br>`;
+      });
+    } else if(uniqueCodes.length){
+      html += `업종코드: <strong>${uniqueCodes.join(', ')}</strong><br>`;
+      html += `<span style="color:#A32D2D;">⚠️ 수입금액 자동추출 실패 — 직접 입력 필요</span><br>`;
+    } else {
+      html += `<span style="color:#A32D2D;">⚠️ 업종코드/수입금액 미감지 — 직접 입력 필요</span><br>`;
+    }
     if(totalAmt) html += `총 수입금액: <strong>${F(totalAmt)}원</strong><br>`;
     if(pension) html += `국민연금: <strong>${F(pension)}원</strong><br>`;
     if(nokran) html += `노란우산공제: <strong>${F(nokran)}원</strong><br>`;
@@ -600,19 +613,48 @@ function applyParsed(){
   }
 
   // ── 사업소득 안내문인 경우 ──
-  if(parsedData.codes.length){
-    const rows = document.querySelectorAll('.income-row');
-    parsedData.codes.forEach((code,i)=>{
-      if(i >= rows.length) addIncomeRow();
-      const match = IC.find(d=>d.c===code.padStart(6,'0')||d.c===code);
+  const pairs = parsedData.codeAmtPairs || [];
+  const codes = parsedData.codes || [];
+
+  if(pairs.length){
+    // 기존 행 모두 제거 후 재생성
+    const existRows = document.querySelectorAll('.income-row');
+    // 첫 번째 행 재사용, 나머지 추가
+    pairs.forEach((p, i)=>{
+      if(i > 0) addIncomeRow();
+    });
+    // 채우기
+    const allRows = [...document.querySelectorAll('.income-row')];
+    pairs.forEach((p, i)=>{
+      const row = allRows[i];
+      if(!row) return;
+      const idx = row.dataset.idx;
+      const match = IC.find(d=>d.c===p.code);
       if(match){
-        const allRows = [...document.querySelectorAll('.income-row')];
-        const idx = allRows[i]?.dataset.idx;
-        if(idx!==undefined){
-          selectInd(idx, match.c, match.n, match.i, match.s, match.b);
-          const searchInput = document.querySelector(`[data-idx="${idx}"] .search-input`);
-          if(searchInput) searchInput.value = match.c+' '+match.n;
-        }
+        selectInd(idx, match.c, match.n, match.i, match.s, match.b);
+        const si = row.querySelector('.search-input');
+        if(si) si.value = match.c + ' ' + match.n;
+      }
+      // ★ 수입금액 실제 입력
+      const amtInput = row.querySelector('.inc-amt');
+      if(amtInput) amtInput.value = p.amt;
+    });
+    updateTotalRev();
+  } else if(codes.length){
+    // 수입금액 없이 업종코드만 있는 경우
+    codes.forEach((code, i)=>{
+      if(i > 0) addIncomeRow();
+    });
+    const allRows = [...document.querySelectorAll('.income-row')];
+    codes.forEach((code, i)=>{
+      const row = allRows[i];
+      if(!row) return;
+      const idx = row.dataset.idx;
+      const match = IC.find(d=>d.c===code);
+      if(match){
+        selectInd(idx, match.c, match.n, match.i, match.s, match.b);
+        const si = row.querySelector('.search-input');
+        if(si) si.value = match.c + ' ' + match.n;
       }
     });
   }
